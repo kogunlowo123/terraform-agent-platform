@@ -27,10 +27,10 @@ jobs:
       policies: ${{ steps.filter.outputs.policies }}
       modules: ${{ steps.modules.outputs.modules }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           list-files: json
           filters: |
@@ -56,8 +56,8 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.terraform == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - run: terraform fmt -check -recursive -diff terraform/
@@ -72,8 +72,8 @@ jobs:
       matrix:
         module: ${{ fromJson(needs.detect-changes.outputs.modules) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - name: Init and validate
@@ -88,8 +88,8 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.terraform == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - uses: terraform-linters/setup-tflint@v4
+      - uses: actions/checkout@v7
+      - uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: latest
       - run: tflint --init
@@ -104,7 +104,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Checkov
         uses: bridgecrewio/checkov-action@v12
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: detect-changes
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: open-policy-agent/setup-opa@v2
         with:
           version: "0.68.0"
@@ -162,10 +162,10 @@ jobs:
           KEY: ${{ secrets.INFRACOST_API_KEY }}
         run: echo "enabled=$([ -n "$KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.gate.outputs.enabled == 'true'
 
-      - uses: infracost/actions/setup@v3
+      - uses: infracost/actions/setup@v4
         if: steps.gate.outputs.enabled == 'true'
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
