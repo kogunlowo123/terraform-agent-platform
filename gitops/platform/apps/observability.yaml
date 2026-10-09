@@ -1,0 +1,62 @@
+# Observability stack: OTel collector, Prometheus rules, Grafana dashboards.
+# Dashboards and alert rules are sourced from observability/ in this repo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tap-observability
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tap
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 65.1.1
+      helm:
+        releaseName: tap-observability
+        values: |
+          grafana:
+            defaultDashboardsEnabled: true
+            sidecar:
+              dashboards:
+                enabled: true
+                label: grafana_dashboard
+          prometheus:
+            prometheusSpec:
+              retention: 30d
+              ruleSelector:
+                matchLabels:
+                  app.kubernetes.io/part-of: tap
+    - repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+      chart: opentelemetry-collector
+      targetRevision: 0.104.0
+      helm:
+        releaseName: tap-otel
+        values: |
+          mode: deployment
+          image:
+            repository: otel/opentelemetry-collector-contrib
+          configMap:
+            create: false
+            existingName: tap-otel-collector-config   # from observability/otel-collector.yaml
+    # Raw manifests: collector config, alert rules, dashboard configmaps
+    - repoURL: https://github.com/example-org/terraform-agent-platform.git
+      targetRevision: main
+      path: observability
+      directory:
+        include: "{otel-collector.yaml,prometheus/*.yaml}"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tap-observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

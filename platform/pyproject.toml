@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tap-platform"
+version = "0.1.0"
+description = "Terraform Agent Platform (TAP) control plane: API gateway, workflow engine integration, policy gates, runner orchestration."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "TAP Platform Architecture Group" }]
+keywords = ["terraform", "opentofu", "iac", "agents", "temporal", "opa"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: Apache Software License",
+]
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "redis>=5.0",
+    "nats-py>=2.7",
+    "temporalio>=1.6",
+    "httpx>=0.27",
+    "python-jose[cryptography]>=3.3",
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp>=1.25",
+    "opentelemetry-instrumentation-fastapi>=0.46b0",
+    "qdrant-client>=1.9",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+kubernetes = ["kubernetes>=29.0"]
+kafka = ["aiokafka>=0.10"]
+pinecone = ["pinecone-client>=4.0"]
+
+[project.scripts]
+tap-server = "tap_platform.main:serve"
+
+[project.entry-points."tap.runners"]
+terraform = "tap_platform.runner.terraform_runner:TerraformRunner"
+opentofu = "tap_platform.runner.opentofu_runner:OpenTofuRunner"
+
+[project.entry-points."tap.vector_stores"]
+qdrant = "tap_platform.memory.qdrant_store:QdrantVectorStore"
+pinecone = "tap_platform.memory.pinecone_store:PineconeVectorStore"
+
+[project.entry-points."tap.event_buses"]
+nats = "tap_platform.events.nats_bus:NatsEventBus"
+kafka = "tap_platform.events.kafka_bus:KafkaEventBus"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tap_platform"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

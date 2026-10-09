@@ -1,0 +1,27 @@
+name: secops
+version: 0.1.0
+domain: security-operations
+capabilities:
+  - security.scan.orchestrate
+  - security.policy.validate
+  - security.finding.triage
+  - security.remediation.pr
+required_tools:
+  - finding_triage
+  - remediation_pr
+  - scan_checkov
+  - scan_tfsec
+  - scan_trivy
+  - policy_check
+memory:
+  semantic_collection: tap-secops-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:*"
+    - "repos:*"
+  mutation_budget: 10
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 200000

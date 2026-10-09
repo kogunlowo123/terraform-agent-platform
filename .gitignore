@@ -1,0 +1,64 @@
+# --- Python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Terraform -----------------------------------------------------------
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+plan.out
+plan.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+.terraformrc
+terraform.rc
+*.tfvars
+*.tfvars.json
+!*.auto.tfvars.example
+
+# --- Secrets / env --------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/testdata/**/*.key
+
+# --- Go --------------------------------------------------------------------
+tests/terraform/vendor/
+*.test
+
+# --- OPA / bundles -----------------------------------------------------------
+*.tar.gz
+opa_coverage.json
+
+# --- IDE / OS ------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Local artifacts ---------------------------------------------------------------
+sbom.spdx.json
+*.sarif
+pytest-report.xml

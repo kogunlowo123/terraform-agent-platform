@@ -1,0 +1,186 @@
+name: terraform-ci
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "policies/**"
+      - ".github/workflows/terraform-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.9.8"
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  detect-changes:
+    name: Detect changed modules
+    runs-on: ubuntu-latest
+    outputs:
+      terraform: ${{ steps.filter.outputs.terraform }}
+      policies: ${{ steps.filter.outputs.policies }}
+      modules: ${{ steps.modules.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          list-files: json
+          filters: |
+            terraform:
+              - "terraform/**"
+            policies:
+              - "policies/**"
+
+      - id: modules
+        name: Derive module matrix from changed files
+        env:
+          CHANGED: ${{ steps.filter.outputs.terraform_files }}
+        run: |
+          # terraform/<provider>/<module>/... -> unique "terraform/<provider>/<module>" dirs
+          modules=$(echo "$CHANGED" | jq -c '[.[] | select(startswith("terraform/"))
+            | split("/") | .[0:3] | join("/")] | unique')
+          echo "modules=${modules}" >> "$GITHUB_OUTPUT"
+          echo "Changed modules: ${modules}"
+
+  fmt:
+    name: terraform fmt
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - run: terraform fmt -check -recursive -diff terraform/
+
+  validate:
+    name: validate (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform == 'true' && needs.detect-changes.outputs.modules != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.detect-changes.outputs.modules) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: Init and validate
+        working-directory: ${{ matrix.module }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - run: tflint --init
+      - run: tflint --recursive --chdir terraform/ --format compact
+
+  static-analysis:
+    name: checkov + tfsec (SARIF)
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform == 'true'
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/
+          output_format: sarif
+          output_file_path: checkov.sarif
+          soft_fail: false
+
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-sarif-action@v0.1.4
+        with:
+          working_directory: terraform/
+          sarif_file: tfsec.sarif
+
+      - name: Upload tfsec SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tfsec.sarif
+          category: tfsec
+
+  opa-test:
+    name: opa test policies/
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: "0.68.0"
+      - run: opa fmt --diff --fail policies/
+      - run: opa test policies/ -v
+
+  infracost:
+    name: infracost PR comment
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    # Optional: only runs when the API key secret is configured.
+    if: needs.detect-changes.outputs.terraform == 'true'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check for API key
+        id: gate
+        env:
+          KEY: ${{ secrets.INFRACOST_API_KEY }}
+        run: echo "enabled=$([ -n "$KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
+
+      - uses: infracost/actions/setup@v3
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Generate cost estimate
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          infracost breakdown --path terraform/ \
+            --format json --out-file /tmp/infracost.json
+
+      - name: Post PR comment
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          infracost comment github --path /tmp/infracost.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --pull-request "${{ github.event.pull_request.number }}" \
+            --github-token "${{ github.token }}" \
+            --behavior update

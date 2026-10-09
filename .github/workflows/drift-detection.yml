@@ -1,0 +1,90 @@
+name: drift-detection
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # every 6 hours
+  workflow_dispatch:
+    inputs:
+      workspace:
+        description: "Limit to a single workspace (optional)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: drift-detection
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: Trigger TAP drift workflows
+    runs-on: ubuntu-latest
+    env:
+      TAP_API_URL: ${{ vars.TAP_API_URL }}
+      TAP_API_TOKEN: ${{ secrets.TAP_API_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Preflight
+        run: |
+          if [ -z "$TAP_API_URL" ] || [ -z "$TAP_API_TOKEN" ]; then
+            echo "::error::TAP_API_URL variable and TAP_API_TOKEN secret must be configured"
+            exit 1
+          fi
+
+      - name: Trigger drift runs for all active workspaces
+        id: trigger
+        run: |
+          payload='{"action": "drift"}'
+          if [ -n "${{ inputs.workspace }}" ]; then
+            payload=$(jq -nc --arg ws "${{ inputs.workspace }}" '{action: "drift", workspace: $ws}')
+          fi
+          curl -fsS -X POST "$TAP_API_URL/v1/runs/batch" \
+            -H "Authorization: Bearer $TAP_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Idempotency-Key: drift-$(date -u +%Y%m%dT%H)" \
+            -d "$payload" | tee batch.json
+          echo "batch_id=$(jq -r '.batch_id' batch.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for drift runs to complete
+        run: |
+          batch="${{ steps.trigger.outputs.batch_id }}"
+          for i in $(seq 1 60); do
+            status=$(curl -fsS "$TAP_API_URL/v1/runs/batch/$batch" \
+              -H "Authorization: Bearer $TAP_API_TOKEN" | jq -r '.status')
+            echo "poll $i: $status"
+            [ "$status" = "completed" ] && exit 0
+            sleep 30
+          done
+          echo "::warning::drift batch did not complete within 30 minutes"
+
+      - name: Collect drift results
+        id: results
+        run: |
+          batch="${{ steps.trigger.outputs.batch_id }}"
+          curl -fsS "$TAP_API_URL/v1/runs/batch/$batch/results?filter=drifted" \
+            -H "Authorization: Bearer $TAP_API_TOKEN" > drifted.json
+          count=$(jq '.workspaces | length' drifted.json)
+          echo "drifted=$count" >> "$GITHUB_OUTPUT"
+          jq -r '.workspaces[] | "- **\(.name)** (\(.environment)): \(.drifted_resources) resources drifted ([run](\(.run_url)))"' \
+            drifted.json > drift-body.md || true
+
+      - name: Open or update drift issue
+        if: steps.results.outputs.drifted != '0'
+        run: |
+          title="Drift detected: ${{ steps.results.outputs.drifted }} workspace(s) ($(date -u +%Y-%m-%d))"
+          {
+            echo "Scheduled drift detection found divergence between state and live infrastructure."
+            echo
+            cat drift-body.md
+            echo
+            echo "Triage: approve a remediation run (\`tap run plan --workspace <ws>\`) or record an accepted deviation."
+          } > issue-body.md
+          existing=$(gh issue list --label drift --state open --limit 1 --json number --jq '.[0].number' || true)
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue comment "$existing" --body-file issue-body.md
+          else
+            gh issue create --title "$title" --body-file issue-body.md --label drift,ops
+          fi

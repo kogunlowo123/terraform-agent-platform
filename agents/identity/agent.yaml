@@ -1,0 +1,31 @@
+name: identity
+version: 0.1.0
+domain: identity-access-management
+capabilities:
+  - iam.policy.generate
+  - iam.least_privilege.analyze
+  - iam.access.review
+  - iam.rbac.sync
+  - iam.federation.setup
+required_tools:
+  - iam_policy_generate
+  - access_review
+  - entitlement_diff
+  - terraform_plan
+  - terraform_apply
+  - policy_check
+memory:
+  semantic_collection: tap-identity-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:iam-*"
+    - "identity:roles/*"
+    - "identity:policies/*"
+  mutation_budget: 5
+  dry_run_default: true
+  # Domain override: every mutation requires human approval, no exceptions.
+  approval_required_for_all_mutations: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 180000

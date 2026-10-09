@@ -1,0 +1,89 @@
+framework: pci-dss
+version: "PCI-DSS v4.0"
+controls:
+  - id: "1.3.1"
+    title: Inbound traffic to the CDE is restricted
+    description: >
+      Inbound traffic to the cardholder data environment is restricted to only
+      necessary traffic; all other traffic is specifically denied.
+    policy_refs:
+      - tap.terraform.deny_open_ingress
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.terraform.deny_open_ingress' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: "2.2.1"
+    title: Configuration standards for system components
+    description: >
+      Configuration standards are developed, implemented, and maintained to
+      cover all system components and address known security vulnerabilities
+      (IaC modules + policy gates as the configuration standard).
+    policy_refs:
+      - tap.terraform.require_tags
+      - tap.kubernetes.pod_security
+    evidence:
+      - "SELECT package, count(*) FROM policy_results WHERE created_at > now() - interval '90 days' GROUP BY package"
+    automation: full
+
+  - id: "3.5.1"
+    title: Stored account data is rendered unreadable
+    description: >
+      Primary account numbers are rendered unreadable anywhere they are stored
+      (encryption at rest enforced on all storage resources).
+    policy_refs:
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.encryption_required' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: "6.3.2"
+    title: Inventory of bespoke and custom software
+    description: >
+      An inventory of bespoke and custom software and third-party components
+      is maintained (SBOM generated on every release and weekly scan).
+    policy_refs: []
+    evidence:
+      - "report: syft SBOM artifacts from security-scan and release workflows, 90 days"
+    automation: full
+
+  - id: "6.4.1"
+    title: Public-facing web applications are protected
+    description: >
+      Public-facing web applications are protected against attacks; only 80 and
+      443 may be exposed and storage is never public.
+    policy_refs:
+      - tap.terraform.deny_open_ingress
+      - tap.terraform.deny_public_s3
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package IN ('tap.terraform.deny_open_ingress','tap.terraform.deny_public_s3') AND decision = 'deny' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: "10.2.1"
+    title: Audit logs capture all access and actions
+    description: >
+      Audit logs are enabled and active for all system components and
+      cardholder data (immutable audit rows for every run state transition).
+    policy_refs: []
+    evidence:
+      - "SELECT count(*) FROM audit_log WHERE created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: "11.3.1"
+    title: Internal vulnerability scans
+    description: >
+      Internal vulnerability scans are performed at least quarterly and after
+      significant changes (trivy/grype on schedule and on every PR).
+    policy_refs: []
+    evidence:
+      - "report: security-scan workflow history (weekly schedule + PR triggers)"
+    automation: full
+
+  - id: "12.5.2"
+    title: PCI-DSS scope documentation
+    description: >
+      PCI-DSS scope is documented and confirmed at least annually and upon
+      significant change to the environment.
+    policy_refs: []
+    evidence:
+      - "document: annual scope confirmation (compliance team)"
+    automation: manual

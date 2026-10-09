@@ -1,0 +1,84 @@
+# OpenTelemetry Collector configuration for TAP.
+# Deployed as ConfigMap `tap-otel-collector-config` by the observability app
+# (gitops/platform/apps/observability.yaml).
+#
+# Flow: OTLP in -> batch + tenant attribution -> Prometheus (metrics),
+# Loki (logs), Tempo (traces).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tap-otel-collector-config
+  namespace: tap-observability
+  labels:
+    app.kubernetes.io/part-of: tap
+data:
+  relay: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+
+      batch:
+        send_batch_size: 8192
+        timeout: 5s
+
+      # Tenant attribution: every signal must carry tenant_id so dashboards,
+      # alerts, and budgets can slice per tenant. Signals without it are
+      # tagged "untenanted" and surfaced on the hygiene dashboard.
+      attributes/tenant:
+        actions:
+          - key: tenant_id
+            action: insert
+            value: untenanted
+
+      resource:
+        attributes:
+          - key: service.namespace
+            action: upsert
+            value: tap
+
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:9464
+        resource_to_telemetry_conversion:
+          enabled: true   # keeps tenant_id as a metric label
+
+      loki:
+        endpoint: http://loki.tap-observability.svc:3100/loki/api/v1/push
+        default_labels_enabled:
+          exporter: true
+          job: true
+
+      otlp/tempo:
+        endpoint: tempo.tap-observability.svc:4317
+        tls:
+          insecure: true
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    service:
+      extensions: [health_check]
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/tenant, resource, batch]
+          exporters: [prometheus]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/tenant, resource, batch]
+          exporters: [loki]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/tenant, resource, batch]
+          exporters: [otlp/tempo]

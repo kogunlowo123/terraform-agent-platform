@@ -1,0 +1,27 @@
+name: netops
+version: 0.1.0
+domain: network-operations
+capabilities:
+  - network.cidr.plan
+  - network.topology.design
+  - network.dns.manage
+  - network.lb.configure
+required_tools:
+  - cidr_plan
+  - dns_record_manage
+  - lb_configure
+  - terraform_plan
+  - terraform_apply
+  - policy_check
+memory:
+  semantic_collection: tap-netops-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:net-*"
+    - "zones:*.internal"
+  mutation_budget: 12
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 160000

@@ -1,0 +1,85 @@
+framework: cis
+version: "CIS AWS Foundations Benchmark v3.0 + CIS Kubernetes Benchmark v1.9"
+controls:
+  - id: AWS-2.1.1
+    title: S3 buckets deny HTTP requests
+    description: >
+      S3 buckets are configured to deny non-HTTPS requests and encrypt data at
+      rest.
+    policy_refs:
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.encryption_required' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: AWS-2.1.4
+    title: S3 Block Public Access is enabled
+    description: >
+      S3 Block Public Access settings are enabled at the bucket level with all
+      four settings true.
+    policy_refs:
+      - tap.terraform.deny_public_s3
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.terraform.deny_public_s3' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: AWS-5.2
+    title: No ingress from 0.0.0.0/0 to administration ports
+    description: >
+      Security groups do not allow ingress from 0.0.0.0/0 or ::/0 to port 22
+      or 3389.
+    policy_refs:
+      - tap.terraform.deny_open_ingress
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.terraform.deny_open_ingress' AND messages::text LIKE '%administrative port%' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: AWS-2.3.1
+    title: RDS encryption at rest is enabled
+    description: >
+      Encryption at rest is enabled for RDS database instances and clusters.
+    policy_refs:
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.encryption_required' AND messages::text LIKE '%storage_encrypted%' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: AWS-2.2.1
+    title: EBS volume encryption is enabled
+    description: >
+      EBS volume encryption is enabled in all regions for all volumes.
+    policy_refs:
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.encryption_required' AND messages::text LIKE '%EBS%' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: K8S-5.2.1
+    title: Minimize the admission of privileged containers
+    description: >
+      The cluster does not admit privileged containers.
+    policy_refs:
+      - tap.kubernetes.pod_security
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.kubernetes.pod_security' AND messages::text LIKE '%privileged%' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: K8S-5.2.6
+    title: Minimize the admission of root containers
+    description: >
+      Containers are required to run as non-root users.
+    policy_refs:
+      - tap.kubernetes.pod_security
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.kubernetes.pod_security' AND messages::text LIKE '%runAsNonRoot%' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: K8S-5.2.9
+    title: Minimize the admission of hostPath volumes
+    description: >
+      Containers with hostPath volumes are not admitted.
+    policy_refs:
+      - tap.kubernetes.pod_security
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.kubernetes.pod_security' AND messages::text LIKE '%hostPath%' AND created_at > now() - interval '90 days'"
+    automation: full

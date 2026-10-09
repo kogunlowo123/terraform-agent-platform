@@ -1,0 +1,31 @@
+name: llmops
+version: 0.1.0
+domain: ai-infrastructure-operations
+capabilities:
+  - ai.model.deploy
+  - ai.rag.provision
+  - ai.prompt.publish
+  - ai.eval.run
+  - ai.governance.check
+required_tools:
+  - model_deploy
+  - rag_provision
+  - prompt_publish
+  - eval_run
+  - terraform_plan
+  - terraform_apply
+  - policy_check
+  - cost_estimate
+memory:
+  semantic_collection: tap-llmops-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:ai-*"
+    - "prompts:registry/*"
+    - "endpoints:*"
+  mutation_budget: 10
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 220000

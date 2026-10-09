@@ -1,0 +1,24 @@
+# Default: platform team reviews everything not claimed below.
+* @example-org/platform-team
+
+# Policy-as-code and governance: security team is a required reviewer.
+/policies/ @example-org/security-team
+/governance/ @example-org/security-team
+/compliance/ @example-org/security-team @example-org/compliance-team
+
+# Terraform modules: platform team.
+/terraform/ @example-org/platform-team
+
+# Control plane, SDK, and agents.
+/platform/ @example-org/platform-team
+/sdk/ @example-org/platform-team
+/agents/ @example-org/platform-team @example-org/ai-governance-team
+
+# CI/CD, GitOps, and observability.
+/.github/ @example-org/platform-team @example-org/security-team
+/workflows/ @example-org/platform-team
+/gitops/ @example-org/platform-team
+/observability/ @example-org/platform-team
+
+# AI policies additionally need AI governance sign-off.
+/policies/ai/ @example-org/security-team @example-org/ai-governance-team

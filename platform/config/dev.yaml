@@ -1,0 +1,31 @@
+# TAP control plane — local development configuration.
+# Keys map 1:1 to tap_platform.config.Settings fields (injected as TAP_* env).
+# Matches services in platform/docker-compose.dev.yaml.
+
+environment: dev
+host: 0.0.0.0
+port: 8080
+
+database_url: postgresql+asyncpg://tap:tap@localhost:5432/tap
+redis_url: redis://localhost:6379/0
+nats_url: nats://localhost:4222
+event_bus: nats
+
+temporal_target: localhost:7233
+temporal_namespace: tap
+temporal_task_queue: tap-runs
+
+opa_url: http://localhost:8181
+opa_decision_path: /v1/data/tap/terraform/decision
+
+oidc_issuer: http://localhost:8080/dev-issuer   # dev-only; replace with Entra/Okta
+oidc_audience: tap-api
+
+vector_store: qdrant
+qdrant_url: http://localhost:6333
+
+runner_namespace: tap-runners
+runner_image_terraform: ghcr.io/tap/runner-terraform:1.9
+runner_image_opentofu: ghcr.io/tap/runner-opentofu:1.8
+
+otel_exporter_otlp_endpoint: http://localhost:4317

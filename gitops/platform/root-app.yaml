@@ -1,0 +1,38 @@
+# ArgoCD app-of-apps root for the TAP platform.
+#
+# Apply once per cluster:
+#   kubectl apply -n argocd -f gitops/platform/root-app.yaml
+# Everything else (control plane, Temporal, OPA, observability, runners) is
+# reconciled from gitops/platform/apps/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tap-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tap
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/example-org/terraform-agent-platform.git
+    targetRevision: main
+    path: gitops/platform/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

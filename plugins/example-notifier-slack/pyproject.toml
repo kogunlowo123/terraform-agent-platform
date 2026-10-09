@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tap-notifier-slack"
+version = "0.1.0"
+description = "Example TAP notifier plugin: posts run lifecycle events to a Slack webhook."
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+]
+
+[project.entry-points."tap.notifiers"]
+slack = "tap_notifier_slack:SlackNotifier"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tap_notifier_slack"]

@@ -1,0 +1,138 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write # changelog + GitHub release
+  packages: write # push to ghcr
+  id-token: write # cosign keyless signing + PyPI trusted publishing
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: Build, push, and sign images
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push control plane image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: platform/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless, GitHub OIDC)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes "${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+
+  policy-bundle:
+    name: Build and sign policy bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: "0.68.0"
+      - name: Build bundle
+        run: |
+          opa test policies/ -v
+          mkdir -p dist
+          opa build -b policies/ -o dist/tap-policies.tar.gz \
+            --revision "${GITHUB_SHA::7}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tap-policies-bundle
+          path: dist/tap-policies.tar.gz
+
+  changelog-and-release:
+    name: Changelog + GitHub release
+    runs-on: ubuntu-latest
+    needs: [build-and-push, policy-bundle]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog since previous tag
+        id: changelog
+        run: |
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          range="${prev:+$prev..}${GITHUB_REF_NAME}"
+          {
+            echo "## Changes (${range})"
+            echo
+            git log --no-merges --pretty='- %s (%h)' $range
+          } > CHANGELOG-release.md
+          cat CHANGELOG-release.md
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tap-policies-bundle
+          path: dist/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG-release.md
+          files: dist/tap-policies.tar.gz
+          generate_release_notes: true
+
+  publish-sdk:
+    name: Publish SDK to PyPI (trusted publishing)
+    runs-on: ubuntu-latest
+    needs: changelog-and-release
+    environment: pypi # require environment protection rules
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist + wheel
+        run: |
+          pip install build
+          python -m build sdk/ --outdir dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          # No token: PyPI trusted publishing via GitHub OIDC

@@ -1,0 +1,28 @@
+name: dataops
+version: 0.1.0
+domain: data-platform-operations
+capabilities:
+  - data.warehouse.provision
+  - data.pipeline.scaffold
+  - data.catalog.register
+  - data.lakehouse.provision
+required_tools:
+  - warehouse_provision
+  - dag_generate
+  - catalog_register
+  - terraform_plan
+  - terraform_apply
+  - policy_check
+  - cost_estimate
+memory:
+  semantic_collection: tap-dataops-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:data-*"
+    - "catalogs:*"
+  mutation_budget: 15
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 180000

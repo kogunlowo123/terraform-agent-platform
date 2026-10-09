@@ -1,0 +1,91 @@
+framework: iso27001
+version: "ISO/IEC 27001:2022 Annex A"
+controls:
+  - id: A.5.23
+    title: Information security for use of cloud services
+    description: >
+      Processes for acquisition, use, management and exit from cloud services
+      are established in accordance with security requirements.
+    policy_refs:
+      - tap.terraform.instance_allowlist
+      - tap.ai.model_governance
+    evidence:
+      - "SELECT run_id, package, decision FROM policy_results WHERE package = 'tap.ai.model_governance' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: A.8.3
+    title: Information access restriction
+    description: >
+      Access to information and associated assets is restricted in accordance
+      with the access control policy (no public storage, no world-open
+      ingress).
+    policy_refs:
+      - tap.terraform.deny_public_s3
+      - tap.terraform.deny_open_ingress
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package IN ('tap.terraform.deny_public_s3','tap.terraform.deny_open_ingress') AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: A.8.9
+    title: Configuration management
+    description: >
+      Configurations of hardware, software, services and networks are
+      established, documented, implemented, monitored and reviewed (IaC +
+      drift detection).
+    policy_refs:
+      - tap.terraform.require_tags
+    evidence:
+      - "SELECT workspace_id, detected_at FROM drift_detections WHERE detected_at > now() - interval '30 days'"
+    automation: full
+
+  - id: A.8.24
+    title: Use of cryptography
+    description: >
+      Rules for the effective use of cryptography, including key management,
+      are defined and implemented (encryption at rest enforced on every plan).
+    policy_refs:
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.encryption_required' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: A.8.28
+    title: Secure coding
+    description: >
+      Secure coding principles are applied to software development (static
+      analysis, dependency and IaC scanning in CI).
+    policy_refs: []
+    evidence:
+      - "report: terraform-ci + security-scan SARIF uploads (GitHub code scanning API, last 90 days)"
+    automation: partial
+
+  - id: A.8.32
+    title: Change management
+    description: >
+      Changes to information processing facilities and systems are subject to
+      change management procedures (governed runs, approvals, audit trail).
+    policy_refs:
+      - tap.cost.budget_gate
+    evidence:
+      - "SELECT run_id, approver, decision, created_at FROM approvals WHERE created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: A.5.35
+    title: Independent review of information security
+    description: >
+      The organization's approach to managing information security is reviewed
+      independently at planned intervals.
+    policy_refs: []
+    evidence:
+      - "document: annual policy review minutes (governance repo, PR history for policies/**)"
+    automation: manual
+
+  - id: A.8.16
+    title: Monitoring activities
+    description: >
+      Networks, systems and applications are monitored for anomalous behaviour
+      and appropriate actions taken.
+    policy_refs: []
+    evidence:
+      - "report: Prometheus alert firing history (observability/prometheus/rules.yaml), 90 days"
+    automation: partial

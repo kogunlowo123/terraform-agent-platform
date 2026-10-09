@@ -1,0 +1,26 @@
+name: devops
+version: 0.1.0
+domain: cicd-gitops
+capabilities:
+  - pipeline.generate
+  - gitops.sync
+  - environment.promotion.pr
+required_tools:
+  - pipeline_generate
+  - gitops_commit
+  - promotion_pr
+  - policy_check
+  - scan_checkov
+memory:
+  semantic_collection: tap-devops-semantic
+guardrails:
+  scope_allowlist:
+    - "repos:platform/*"
+    - "repos:apps/*"
+    - "argocd:applications/*"
+  mutation_budget: 15
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 160000

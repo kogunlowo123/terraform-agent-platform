@@ -1,0 +1,110 @@
+# Prometheus alert rules for TAP, deployed as a PrometheusRule and selected by
+# the kube-prometheus-stack ruleSelector (app.kubernetes.io/part-of: tap).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tap-alerts
+  namespace: tap-observability
+  labels:
+    app.kubernetes.io/part-of: tap
+spec:
+  groups:
+    - name: tap-runs
+      rules:
+        - alert: RunFailureRateHigh
+          expr: |
+            sum(rate(tap_runs_total{status="failed"}[15m]))
+              /
+            clamp_min(sum(rate(tap_runs_total[15m])), 1e-9)
+              > 0.20
+          for: 15m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Run failure rate above 20%"
+            description: >-
+              {{ printf "%.0f" (mul $value 100) }}% of runs failed over the
+              last 15m. Check runner fleet health, cloud provider status, and
+              recent policy bundle activations.
+            runbook_url: https://github.com/example-org/terraform-agent-platform/blob/main/docs/guides/runbooks.md#run-failure-rate
+
+        - alert: PolicyDenialSpike
+          expr: |
+            sum(rate(tap_policy_decisions_total{decision="deny"}[30m]))
+              >
+            4 * sum(rate(tap_policy_decisions_total{decision="deny"}[6h] offset 6h))
+          for: 30m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "Policy denials spiking vs 6h baseline"
+            description: >-
+              Denial rate is more than 4x the prior-6h baseline. Either a bad
+              bundle rollout (check the most recent bundle revision) or a
+              misbehaving automation pushing non-compliant plans.
+
+        - alert: DriftDetected
+          expr: sum by (workspace, tenant_id) (tap_drift_resources) > 0
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Drift in workspace {{ $labels.workspace }}"
+            description: >-
+              {{ $value }} resource(s) drifted from state in workspace
+              {{ $labels.workspace }} (tenant {{ $labels.tenant_id }}).
+              A remediation run is awaiting approval, or the deviation must be
+              recorded as accepted.
+
+        - alert: RunnerQueueBacklog
+          expr: sum(tap_runner_queue_depth) > 25
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Runner queue backlog ({{ $value }} queued runs)"
+            description: >-
+              More than 25 runs queued for over 10m. Check runner namespace
+              quota (maxConcurrentJobs), node pool capacity, and stuck Jobs
+              exceeding activeDeadlineSeconds.
+
+    - name: tap-agents
+      rules:
+        - alert: AgentTokenBudgetExceeded
+          expr: |
+            sum by (tenant_id, agent) (increase(tap_agent_tokens_total[1d]))
+              >
+            on (tenant_id, agent) group_left tap_agent_token_budget_daily
+          for: 5m
+          labels:
+            severity: warning
+            team: finops
+          annotations:
+            summary: "Agent {{ $labels.agent }} exceeded daily token budget"
+            description: >-
+              Tenant {{ $labels.tenant_id }} agent {{ $labels.agent }} has
+              spent more than its daily token budget. The AI Gateway is now
+              throttling; raise the budget or investigate a reasoning loop.
+
+    - name: tap-workflows
+      rules:
+        - alert: TemporalWorkflowStuck
+          expr: |
+            max by (workflow_type) (
+              time() - tap_workflow_last_progress_timestamp_seconds{workflow_type=~"RunWorkflow|DriftWorkflow"}
+            ) > 3600
+          for: 15m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "{{ $labels.workflow_type }} has made no progress for >1h"
+            description: >-
+              A Temporal workflow has not advanced in over an hour. Usual
+              causes: approval signal never delivered (check ChatOps bridge),
+              runner Job lost, or Temporal task queue starvation. Inspect via
+              `temporal workflow show`.

@@ -1,0 +1,31 @@
+name: infrastructure
+version: 0.1.0
+domain: terraform-provisioning
+capabilities:
+  - infrastructure.generate
+  - infrastructure.provision
+  - infrastructure.validate
+  - module.select
+required_tools:
+  - hcl_generate
+  - module_select
+  - terraform_validate
+  - terraform_plan
+  - terraform_apply
+  - module_search
+  - cost_estimate
+  - policy_check
+  - scan_checkov
+  - scan_tfsec
+memory:
+  semantic_collection: tap-infrastructure-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:*"
+    - "modules:registry/*"
+  mutation_budget: 30
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 240000

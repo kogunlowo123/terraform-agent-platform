@@ -1,0 +1,553 @@
+openapi: 3.1.0
+info:
+  title: Terraform Agent Platform API
+  version: 0.1.0
+  description: |
+    TAP control-plane v1 contract. Conventions: cursor pagination
+    (`cursor`/`limit` query params, `next_cursor` in envelopes), RFC 7807
+    `application/problem+json` errors, `Idempotency-Key` header on POSTs,
+    UUIDs serialized as strings, UTC ISO 8601 timestamps, OIDC bearer authn.
+servers:
+  - url: /v1
+security:
+  - oidc: []
+
+tags:
+  - name: runs
+  - name: workspaces
+  - name: agents
+  - name: marketplace
+  - name: policies
+  - name: approvals
+  - name: audit
+
+paths:
+  /runs:
+    post:
+      tags: [runs]
+      summary: Start a governed run
+      operationId: createRun
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunCreate" }
+      responses:
+        "202":
+          description: Run accepted; Temporal RunWorkflow started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        default: { $ref: "#/components/responses/Problem" }
+    get:
+      tags: [runs]
+      summary: List runs
+      operationId: listRuns
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: workspace_id, in: query, schema: { type: string, format: uuid } }
+        - { name: run_status, in: query, schema: { $ref: "#/components/schemas/RunStatus" } }
+      responses:
+        "200":
+          description: Cursor page of runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Run" }
+                  next_cursor: { type: [string, "null"] }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{run_id}:
+    get:
+      tags: [runs]
+      summary: Get a run
+      operationId: getRun
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{run_id}/events:
+    get:
+      tags: [runs]
+      summary: List run timeline events
+      operationId: listRunEvents
+      parameters:
+        - { $ref: "#/components/parameters/RunId" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200": { description: Cursor page of run events. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{run_id}/cancel:
+    post:
+      tags: [runs]
+      summary: Cancel a run (triggers compensation if applying)
+      operationId: cancelRun
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200":
+          description: Run transitioning to cancelled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /workspaces:
+    post:
+      tags: [workspaces]
+      summary: Create a workspace
+      operationId: createWorkspace
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceCreate" }
+      responses:
+        "201":
+          description: Created workspace.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+    get:
+      tags: [workspaces]
+      summary: List workspaces
+      operationId: listWorkspaces
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: project_id, in: query, schema: { type: string, format: uuid } }
+        - { name: environment, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Cursor page of workspaces. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /workspaces/{workspace_id}:
+    get:
+      tags: [workspaces]
+      summary: Get a workspace
+      operationId: getWorkspace
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200":
+          description: The workspace.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [workspaces]
+      summary: Update a workspace
+      operationId: updateWorkspace
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: Partial Workspace fields. }
+      responses:
+        "200": { description: Updated workspace. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /workspaces/{workspace_id}/lock:
+    post:
+      tags: [workspaces]
+      summary: Lock workspace state
+      operationId: lockWorkspace
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { description: Locked workspace. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /workspaces/{workspace_id}/unlock:
+    post:
+      tags: [workspaces]
+      summary: Unlock workspace state
+      operationId: unlockWorkspace
+      parameters: [{ $ref: "#/components/parameters/WorkspaceId" }]
+      responses:
+        "200": { description: Unlocked workspace. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agents:
+    post:
+      tags: [agents]
+      summary: Register an agent (or a new version)
+      operationId: registerAgent
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, version, domain, manifest]
+              properties:
+                name: { type: string }
+                version: { type: string, description: semver }
+                domain: { $ref: "#/components/schemas/AgentDomain" }
+                manifest: { type: object }
+                artifact_uri: { type: [string, "null"] }
+      responses:
+        "201":
+          description: Registered agent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+        default: { $ref: "#/components/responses/Problem" }
+    get:
+      tags: [agents]
+      summary: Discover agents
+      operationId: listAgents
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: domain, in: query, schema: { $ref: "#/components/schemas/AgentDomain" } }
+        - { name: capability, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Cursor page of agents. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agents/{agent_id}:
+    get:
+      tags: [agents]
+      summary: Get an agent
+      operationId: getAgent
+      parameters:
+        - { name: agent_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The agent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agents/{agent_id}/versions:
+    get:
+      tags: [agents]
+      summary: List agent versions
+      operationId: listAgentVersions
+      parameters:
+        - { name: agent_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200": { description: Cursor page of agent versions. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /marketplace/listings:
+    get:
+      tags: [marketplace]
+      summary: Browse/search marketplace listings
+      operationId: listListings
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: tier, in: query, schema: { type: string, enum: [internal, community, enterprise] } }
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Cursor page of listings. }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [marketplace]
+      summary: Publish a signed OCI agent artifact
+      operationId: publishListing
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [artifact_uri]
+              properties:
+                artifact_uri: { type: string }
+                tier: { type: string, enum: [internal, community, enterprise] }
+                description: { type: [string, "null"] }
+      responses:
+        "201": { description: Created listing (cosign-verified). }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /marketplace/listings/{listing_id}:
+    get:
+      tags: [marketplace]
+      summary: Get a listing
+      operationId: getListing
+      parameters:
+        - { name: listing_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The listing. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /marketplace/listings/{listing_id}/install:
+    post:
+      tags: [marketplace]
+      summary: Install a listed agent into the tenant registry
+      operationId: installListing
+      parameters:
+        - { name: listing_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "202": { description: Install accepted. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /policies:
+    post:
+      tags: [policies]
+      summary: Create a policy set
+      operationId: createPolicySet
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "201": { description: Created policy set. }
+        default: { $ref: "#/components/responses/Problem" }
+    get:
+      tags: [policies]
+      summary: List policy sets
+      operationId: listPolicySets
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200": { description: Cursor page of policy sets. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /policies/{policy_set_id}:
+    get:
+      tags: [policies]
+      summary: Get a policy set
+      operationId: getPolicySet
+      parameters:
+        - { name: policy_set_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The policy set. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /policies/evaluate:
+    post:
+      tags: [policies]
+      summary: Evaluate a plan JSON ad hoc against applicable policy sets
+      operationId: evaluatePolicies
+      responses:
+        "200": { description: "Aggregated OPA decision: allowed, enforcement_level, violations." }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /approvals:
+    get:
+      tags: [approvals]
+      summary: List approvals
+      operationId: listApprovals
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: approval_status, in: query, schema: { type: string, enum: [pending, approved, rejected, expired] } }
+      responses:
+        "200": { description: Cursor page of approvals. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /approvals/{approval_id}:
+    get:
+      tags: [approvals]
+      summary: Get an approval
+      operationId: getApproval
+      parameters:
+        - { name: approval_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The approval. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /approvals/{approval_id}/decision:
+    post:
+      tags: [approvals]
+      summary: Approve or reject; signals the waiting RunWorkflow
+      operationId: decideApproval
+      parameters:
+        - { name: approval_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve]
+              properties:
+                approve: { type: boolean }
+                comment: { type: [string, "null"], maxLength: 2000 }
+      responses:
+        "200": { description: Decided approval. }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /audit:
+    get:
+      tags: [audit]
+      summary: Query the immutable audit trail
+      operationId: listAudit
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: actor, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: resource_type, in: query, schema: { type: string } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: until, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: Cursor page of audit entries. }
+        default: { $ref: "#/components/responses/Problem" }
+
+components:
+  securitySchemes:
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://login.example.com/tap/.well-known/openid-configuration
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+      description: Opaque cursor from a previous page.
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      schema: { type: string }
+      description: Repeated POSTs with the same key return the original result.
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    WorkspaceId:
+      name: workspace_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Problem:
+      description: RFC 7807 error.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string, default: "about:blank" }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: [string, "null"] }
+        instance: { type: [string, "null"] }
+
+    RunAction:
+      type: string
+      enum: [plan, apply, destroy, drift, cost, compliance]
+
+    RunStatus:
+      type: string
+      enum: [pending, planning, policy_check, awaiting_approval, applying,
+             verifying, succeeded, failed, cancelled, compensated]
+
+    RunCreate:
+      type: object
+      required: [workspace_id]
+      properties:
+        workspace_id: { type: string, format: uuid }
+        action: { $ref: "#/components/schemas/RunAction" }
+        engine: { type: string, enum: [terraform, opentofu], default: terraform }
+        variables: { type: object, additionalProperties: true }
+        message: { type: [string, "null"] }
+        auto_apply: { type: boolean, default: false }
+
+    Run:
+      type: object
+      required: [id, tenant_id, workspace_id, action, status, engine, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        action: { $ref: "#/components/schemas/RunAction" }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        engine: { type: string, enum: [terraform, opentofu] }
+        message: { type: [string, "null"] }
+        plan_artifact_uri:
+          type: [string, "null"]
+          description: Evaluated plan artifact that apply must reuse (TOCTOU invariant).
+        cost_delta_usd: { type: [number, "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WorkspaceCreate:
+      type: object
+      required: [project_id, name]
+      properties:
+        project_id: { type: string, format: uuid }
+        name: { type: string, pattern: "^[a-z0-9][a-z0-9-_]*$", maxLength: 120 }
+        environment: { type: string, default: dev }
+        engine: { type: string, enum: [terraform, opentofu], default: terraform }
+        engine_version: { type: string, default: "1.9.0" }
+        vcs_repo: { type: [string, "null"] }
+        working_directory: { type: string, default: "." }
+        variables: { type: object, additionalProperties: true }
+        auto_apply: { type: boolean, default: false }
+
+    Workspace:
+      type: object
+      required: [id, tenant_id, project_id, name, environment, engine,
+                 engine_version, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        name: { type: string }
+        environment: { type: string }
+        engine: { type: string, enum: [terraform, opentofu] }
+        engine_version: { type: string }
+        vcs_repo: { type: [string, "null"] }
+        working_directory: { type: string }
+        auto_apply: { type: boolean }
+        locked: { type: boolean }
+        current_state_version_id: { type: [string, "null"], format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AgentDomain:
+      type: string
+      enum: [appops, devops, secops, netops, dataops, llmops, identity, costops]
+
+    Agent:
+      type: object
+      required: [id, tenant_id, name, domain, enabled, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        domain: { $ref: "#/components/schemas/AgentDomain" }
+        latest_version: { type: [string, "null"], description: semver }
+        capabilities:
+          type: array
+          items: { type: string }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }

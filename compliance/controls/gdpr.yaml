@@ -1,0 +1,83 @@
+framework: gdpr
+version: "Regulation (EU) 2016/679"
+controls:
+  - id: ART-5(1)(f)
+    title: Integrity and confidentiality
+    description: >
+      Personal data is processed in a manner that ensures appropriate security,
+      including protection against unauthorised processing and accidental loss
+      (encryption at rest, no public endpoints).
+    policy_refs:
+      - tap.terraform.encryption_required
+      - tap.terraform.deny_public_s3
+    evidence:
+      - "SELECT run_id, package, decision FROM policy_results WHERE package IN ('tap.terraform.encryption_required','tap.terraform.deny_public_s3') AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: ART-25
+    title: Data protection by design and by default
+    description: >
+      Technical and organisational measures are implemented at the time of
+      determining the means for processing (secure-by-default modules, policy
+      gates on every plan, AI deployments governed before launch).
+    policy_refs:
+      - tap.ai.model_governance
+      - tap.kubernetes.pod_security
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.ai.model_governance' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: ART-30
+    title: Records of processing activities
+    description: >
+      A record of processing activities is maintained; the mandatory
+      data_class tag attributes every resource to a data classification.
+    policy_refs:
+      - tap.terraform.require_tags
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.terraform.require_tags' AND messages::text LIKE '%data_class%' AND created_at > now() - interval '90 days'"
+    automation: partial
+
+  - id: ART-32
+    title: Security of processing
+    description: >
+      Appropriate technical measures including encryption of personal data,
+      ongoing confidentiality, integrity, availability and resilience
+      (encryption gates, drift detection, versioned state).
+    policy_refs:
+      - tap.terraform.encryption_required
+      - tap.terraform.deny_open_ingress
+    evidence:
+      - "SELECT workspace_id, detected_at FROM drift_detections WHERE detected_at > now() - interval '30 days'"
+    automation: full
+
+  - id: ART-33
+    title: Notification of personal data breach
+    description: >
+      Personal data breaches are notified to the supervisory authority within
+      72 hours; alerting feeds the incident process.
+    policy_refs: []
+    evidence:
+      - "report: PolicyDenialSpike / security alert firing history with incident ticket linkage"
+    automation: partial
+
+  - id: ART-35
+    title: Data protection impact assessment
+    description: >
+      DPIAs are carried out for high-risk processing, including new AI model
+      deployments (advisory gate blocks unreviewed models in prod stage).
+    policy_refs:
+      - tap.ai.model_governance
+    evidence:
+      - "document: DPIA register entries linked from model approval PRs"
+    automation: manual
+
+  - id: ART-44
+    title: Transfers of personal data to third countries
+    description: >
+      Transfers only take place under adequate safeguards; region placement is
+      constrained by workspace configuration and reviewed per tenant.
+    policy_refs: []
+    evidence:
+      - "SELECT workspace_id, region FROM workspaces WHERE tenant_id = :tenant"
+    automation: partial

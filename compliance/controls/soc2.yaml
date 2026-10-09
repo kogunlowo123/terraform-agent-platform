@@ -1,0 +1,95 @@
+framework: soc2
+version: "2017 TSC (2022 points of focus)"
+controls:
+  - id: CC6.1
+    title: Logical and physical access controls
+    description: >
+      Logical access security software, infrastructure, and architectures are
+      implemented over protected information assets to restrict access to
+      authorized users.
+    policy_refs:
+      - tap.terraform.deny_public_s3
+      - tap.terraform.deny_open_ingress
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, package, decision, created_at FROM policy_results WHERE package IN ('tap.terraform.deny_public_s3','tap.terraform.deny_open_ingress') AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: CC6.3
+    title: Role-based access and least privilege
+    description: >
+      Access to data and software is granted based on roles and
+      responsibilities, with segregation of duties enforced.
+    policy_refs: []
+    evidence:
+      - "SELECT tenant_id, subject, role, granted_by, created_at FROM audit_log WHERE action = 'rbac.grant' AND created_at > now() - interval '90 days'"
+    automation: partial
+
+  - id: CC6.6
+    title: Boundary protection
+    description: >
+      Logical access security measures protect against threats from sources
+      outside system boundaries.
+    policy_refs:
+      - tap.terraform.deny_open_ingress
+      - tap.kubernetes.pod_security
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.terraform.deny_open_ingress' AND decision = 'deny' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: CC6.8
+    title: Unauthorized or malicious software prevention
+    description: >
+      Controls prevent or detect the introduction of unauthorized or malicious
+      software; all infrastructure changes flow through governed runs with
+      mandatory asset tagging for attribution.
+    policy_refs:
+      - tap.terraform.require_tags
+    evidence:
+      - "SELECT run_id, workspace_id, initiated_by, created_at FROM runs WHERE source NOT IN ('api','vcs_webhook') AND created_at > now() - interval '90 days'"
+    automation: partial
+
+  - id: CC7.1
+    title: Detection of configuration changes and vulnerabilities
+    description: >
+      The entity uses detection and monitoring procedures to identify changes
+      to configurations that introduce vulnerabilities (drift detection,
+      security scanning on every plan).
+    policy_refs: []
+    evidence:
+      - "SELECT workspace_id, detected_at, resource_count FROM drift_detections WHERE detected_at > now() - interval '30 days'"
+      - "report: security-scan weekly SARIF summary (.github/workflows/security-scan.yml)"
+    automation: full
+
+  - id: CC7.2
+    title: Anomaly monitoring
+    description: >
+      System components are monitored for anomalies indicative of malicious
+      acts, natural disasters, or errors.
+    policy_refs: []
+    evidence:
+      - "report: Prometheus alert history for RunFailureRateHigh, PolicyDenialSpike (observability/prometheus/rules.yaml)"
+    automation: partial
+
+  - id: CC8.1
+    title: Change management
+    description: >
+      Changes to infrastructure are authorized, designed, tested, approved,
+      and implemented through the governed run lifecycle with policy gates
+      and recorded approvals.
+    policy_refs:
+      - tap.cost.budget_gate
+    evidence:
+      - "SELECT r.run_id, a.approver, a.decision, a.created_at FROM approvals a JOIN runs r ON r.run_id = a.run_id WHERE r.created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: A1.2
+    title: Recovery infrastructure
+    description: >
+      Environmental protections, backup processes, and recovery infrastructure
+      are maintained (versioned state, compensation workflows, GitOps
+      re-hydration).
+    policy_refs: []
+    evidence:
+      - "SELECT workspace_id, version, created_at FROM state_versions WHERE created_at > now() - interval '30 days' ORDER BY created_at DESC LIMIT 100"
+    automation: partial

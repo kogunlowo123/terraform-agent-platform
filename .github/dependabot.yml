@@ -1,0 +1,43 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directories:
+      - "/platform"
+      - "/sdk"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-minor:
+        update-types: [minor, patch]
+    labels: [dependencies, python]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies, ci]
+
+  - package-ecosystem: terraform
+    directory: "/terraform"
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, terraform]
+
+  - package-ecosystem: docker
+    directory: "/platform"
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, docker]
+
+  - package-ecosystem: gomod
+    directory: "/tests/terraform"
+    schedule:
+      interval: monthly
+    labels: [dependencies, go]

@@ -1,0 +1,152 @@
+# Azure DevOps pipeline template for TAP repositories.
+# Mirrors the GitHub Actions pipelines: Validate -> Plan -> Policy -> Scan.
+
+trigger:
+  branches:
+    include: [main]
+
+pr:
+  branches:
+    include: ["*"]
+
+variables:
+  TF_VERSION: "1.9.8"
+  TF_IN_AUTOMATION: "true"
+  OPA_VERSION: "0.68.0"
+  pythonVersion: "3.12"
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Validate
+    displayName: Validate
+    jobs:
+      - job: terraform_fmt_validate
+        displayName: terraform fmt + validate
+        steps:
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: $(TF_VERSION)
+          - bash: terraform fmt -check -recursive -diff terraform/
+            displayName: terraform fmt
+          - bash: |
+              set -euo pipefail
+              for dir in $(find terraform -name '*.tf' -exec dirname {} \; | sort -u); do
+                echo "== $dir"
+                terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+                terraform -chdir="$dir" validate -no-color
+              done
+            displayName: terraform validate
+
+      - job: tflint
+        displayName: tflint
+        steps:
+          - bash: |
+              curl -fsSL https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+              tflint --init
+              tflint --recursive --chdir terraform/ --format compact
+            displayName: tflint
+
+      - job: python_lint
+        displayName: ruff + mypy
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+          - bash: |
+              pip install ruff mypy
+              ruff check platform/ sdk/ agents/ tests/ scripts/
+              mypy platform/ sdk/ --ignore-missing-imports
+            displayName: lint + typecheck
+
+  - stage: Plan
+    displayName: Plan
+    dependsOn: Validate
+    jobs:
+      - job: plan
+        displayName: terraform plan (speculative)
+        steps:
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: $(TF_VERSION)
+          - bash: |
+              set -euo pipefail
+              mkdir -p $(Build.ArtifactStagingDirectory)/plans
+              for dir in $(find terraform -maxdepth 2 -name '*.tf' -exec dirname {} \; | sort -u); do
+                name=$(echo "$dir" | tr '/' '-')
+                terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+                terraform -chdir="$dir" plan -input=false -out=plan.out || continue
+                terraform -chdir="$dir" show -json plan.out > "$(Build.ArtifactStagingDirectory)/plans/$name.json"
+              done
+            displayName: speculative plans
+            continueOnError: true
+          - publish: $(Build.ArtifactStagingDirectory)/plans
+            artifact: plans
+
+  - stage: Policy
+    displayName: Policy
+    dependsOn: Plan
+    jobs:
+      - job: opa
+        displayName: opa test + eval
+        steps:
+          - bash: |
+              curl -fsSL -o opa https://openpolicyagent.org/downloads/v$(OPA_VERSION)/opa_linux_amd64_static
+              chmod +x opa && sudo mv opa /usr/local/bin/opa
+            displayName: install opa
+          - bash: opa fmt --diff --fail policies/
+            displayName: opa fmt
+          - bash: opa test policies/ -v
+            displayName: opa test
+          - download: current
+            artifact: plans
+          - bash: |
+              set -euo pipefail
+              shopt -s nullglob
+              for plan in $(Pipeline.Workspace)/plans/*.json; do
+                echo "== $plan"
+                opa eval -d policies/ -i "$plan" --format pretty 'data.tap.terraform'
+                denies=$(opa eval -d policies/ -i "$plan" --format raw \
+                  'count([m | some pkg in object.keys(data.tap.terraform); some m in data.tap.terraform[pkg].deny])')
+                if [ "$denies" != "0" ]; then
+                  echo "##vso[task.logissue type=error]$denies policy denial(s) in $plan"
+                  exit 1
+                fi
+              done
+            displayName: evaluate plans against policies
+
+  - stage: Scan
+    displayName: Scan
+    dependsOn: Validate
+    jobs:
+      - job: trivy
+        displayName: trivy fs + config
+        steps:
+          - bash: |
+              curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+              trivy fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .
+              trivy config --severity CRITICAL,HIGH --exit-code 1 .
+            displayName: trivy
+
+      - job: gitleaks
+        displayName: gitleaks
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          - bash: |
+              curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz gitleaks
+              ./gitleaks detect --source . --verbose
+            displayName: gitleaks
+
+      - job: sbom
+        displayName: syft SBOM + grype
+        steps:
+          - bash: |
+              curl -fsSL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+              curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+              syft scan dir:. -o spdx-json > sbom.spdx.json
+              grype sbom:sbom.spdx.json --fail-on high
+            displayName: sbom + vulnerability scan
+          - publish: sbom.spdx.json
+            artifact: sbom

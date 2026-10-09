@@ -1,0 +1,102 @@
+framework: nist-800-53
+version: "NIST SP 800-53 rev 5"
+controls:
+  - id: AC-3
+    title: Access enforcement
+    description: >
+      The system enforces approved authorizations for logical access to
+      information and system resources (RBAC x ABAC in OPA on every API call,
+      no public storage).
+    policy_refs:
+      - tap.terraform.deny_public_s3
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.deny_public_s3' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: AC-6
+    title: Least privilege
+    description: >
+      The principle of least privilege is employed, allowing only authorized
+      accesses necessary to accomplish assigned tasks (non-root pods, no
+      privileged containers, scoped 15-minute OIDC runner credentials).
+    policy_refs:
+      - tap.kubernetes.pod_security
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.kubernetes.pod_security' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: AU-2
+    title: Event logging
+    description: >
+      Event types for logging are identified and logged across the platform
+      (every run state transition, approval, and policy decision).
+    policy_refs: []
+    evidence:
+      - "SELECT action, count(*) FROM audit_log WHERE created_at > now() - interval '90 days' GROUP BY action"
+    automation: full
+
+  - id: CM-2
+    title: Baseline configuration
+    description: >
+      Current baseline configurations are developed, documented, and maintained
+      (IaC modules are the baseline; drift detection flags divergence).
+    policy_refs:
+      - tap.terraform.require_tags
+    evidence:
+      - "SELECT workspace_id, detected_at, resource_count FROM drift_detections WHERE detected_at > now() - interval '30 days'"
+    automation: full
+
+  - id: CM-3
+    title: Configuration change control
+    description: >
+      Configuration changes are approved, documented, and tracked through the
+      governed run lifecycle with policy gates and approval records.
+    policy_refs:
+      - tap.cost.budget_gate
+    evidence:
+      - "SELECT run_id, approver, decision, created_at FROM approvals WHERE created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: SC-7
+    title: Boundary protection
+    description: >
+      The system monitors and controls communications at external and key
+      internal boundaries (world-open ingress limited to 80/443; 22/3389
+      always denied).
+    policy_refs:
+      - tap.terraform.deny_open_ingress
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.terraform.deny_open_ingress' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: SC-28
+    title: Protection of information at rest
+    description: >
+      The confidentiality and integrity of information at rest is protected
+      (encryption required on all storage resources, per-tenant KMS keys).
+    policy_refs:
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.encryption_required' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: SA-15
+    title: Development process, standards, and tools
+    description: >
+      Development processes follow documented standards including AI/ML
+      governance (approved model list, content filtering, invocation logging).
+    policy_refs:
+      - tap.ai.model_governance
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.ai.model_governance' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: SI-2
+    title: Flaw remediation
+    description: >
+      System flaws are identified, reported, and corrected (weekly + per-PR
+      vulnerability scans, SBOM-based dependency analysis).
+    policy_refs: []
+    evidence:
+      - "report: grype/trivy findings trend from security-scan workflow, 90 days"
+    automation: partial

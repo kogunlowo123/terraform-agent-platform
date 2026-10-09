@@ -1,0 +1,44 @@
+# OPA policy service: serves the signed TAP policy bundle to runners and the
+# control plane. Bundle activation is pull-based (OCI registry polling), so
+# policy releases do NOT require a resync of this app.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tap-opa
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tap
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://open-policy-agent.github.io/kube-mgmt/charts
+    chart: opa
+    targetRevision: 102.0.0
+    helm:
+      releaseName: tap-opa
+      values: |
+        replicas: 2
+        opa: true
+        mgmt:
+          enabled: false
+        extraArgs:
+          - "--set=services.registry.url=https://ghcr.io"
+          - "--set=services.registry.type=oci"
+          - "--set=bundles.tap.service=registry"
+          - "--set=bundles.tap.resource=example-org/tap-policies:latest"
+          - "--set=bundles.tap.polling.min_delay_seconds=60"
+          - "--set=bundles.tap.polling.max_delay_seconds=120"
+          - "--set=decision_logs.console=true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tap-policy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,144 @@
+# GitLab CI template for TAP repositories.
+# Mirrors the GitHub Actions pipelines: validate -> plan -> policy -> scan.
+#
+# Usage: include this file from a project's .gitlab-ci.yml:
+#   include:
+#     - project: example-org/terraform-agent-platform
+#       file: workflows/gitlab-ci.yml
+
+stages:
+  - validate
+  - plan
+  - policy
+  - scan
+
+variables:
+  TF_VERSION: "1.9.8"
+  TF_IN_AUTOMATION: "true"
+  TF_ROOT: terraform
+  OPA_VERSION: "0.68.0"
+
+default:
+  interruptible: true
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# --- validate ---------------------------------------------------------------
+
+terraform:fmt:
+  stage: validate
+  image: hashicorp/terraform:$TF_VERSION
+  script:
+    - terraform fmt -check -recursive -diff $TF_ROOT/
+  rules:
+    - changes: ["terraform/**/*"]
+
+terraform:validate:
+  stage: validate
+  image: hashicorp/terraform:$TF_VERSION
+  script:
+    - |
+      for dir in $(find $TF_ROOT -name '*.tf' -exec dirname {} \; | sort -u); do
+        echo "== $dir"
+        terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+        terraform -chdir="$dir" validate -no-color
+      done
+  rules:
+    - changes: ["terraform/**/*"]
+
+tflint:
+  stage: validate
+  image:
+    name: ghcr.io/terraform-linters/tflint:latest
+    entrypoint: [""]
+  script:
+    - tflint --init
+    - tflint --recursive --chdir $TF_ROOT/ --format compact
+  rules:
+    - changes: ["terraform/**/*"]
+
+python:lint:
+  stage: validate
+  image: python:3.12-slim
+  script:
+    - pip install ruff
+    - ruff check platform/ sdk/ agents/ tests/ scripts/
+  rules:
+    - changes: ["platform/**/*", "sdk/**/*", "agents/**/*", "tests/**/*"]
+
+# --- plan ---------------------------------------------------------------------
+
+terraform:plan:
+  stage: plan
+  image: hashicorp/terraform:$TF_VERSION
+  script:
+    - terraform -chdir="$TF_ROOT/$MODULE" init -backend=false -input=false
+    - terraform -chdir="$TF_ROOT/$MODULE" plan -input=false -out=plan.out || true
+    - terraform -chdir="$TF_ROOT/$MODULE" show -json plan.out > plan.json || echo '{}' > plan.json
+  parallel:
+    matrix:
+      - MODULE: [aws, azure, gcp, kubernetes, ai]
+  artifacts:
+    paths: [plan.json]
+    expire_in: 1 week
+  rules:
+    - changes: ["terraform/**/*"]
+      allow_failure: true # plan needs cloud creds; advisory in shared template
+
+# --- policy -------------------------------------------------------------------
+
+opa:test:
+  stage: policy
+  image: openpolicyagent/opa:$OPA_VERSION
+  script:
+    - /opa fmt --diff --fail policies/
+    - /opa test policies/ -v
+
+opa:eval-plan:
+  stage: policy
+  image: openpolicyagent/opa:$OPA_VERSION
+  needs: ["terraform:plan", "opa:test"]
+  script:
+    - |
+      /opa eval -d policies/ -i plan.json --format pretty 'data.tap.terraform' | tee policy-result.txt
+      if /opa eval -d policies/ -i plan.json --format raw \
+          'count([m | some pkg in object.keys(data.tap.terraform); some m in data.tap.terraform[pkg].deny]) > 0' | grep -q true; then
+        echo "Policy deny raised — failing pipeline"; exit 1
+      fi
+  artifacts:
+    paths: [policy-result.txt]
+  rules:
+    - changes: ["terraform/**/*"]
+
+# --- scan ---------------------------------------------------------------------
+
+trivy:
+  stage: scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - trivy fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .
+    - trivy config --severity CRITICAL,HIGH --exit-code 1 .
+
+gitleaks:
+  stage: scan
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --verbose
+
+sbom:
+  stage: scan
+  image:
+    name: anchore/syft:latest
+    entrypoint: [""]
+  script:
+    - /syft scan dir:. -o spdx-json > sbom.spdx.json
+  artifacts:
+    paths: [sbom.spdx.json]
+    expire_in: 4 weeks

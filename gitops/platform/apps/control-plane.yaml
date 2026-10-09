@@ -1,0 +1,36 @@
+# TAP control plane (API gateway, orchestrator, registry, marketplace).
+# Sync is MANUAL: control-plane rollouts are release events, promoted via the
+# release pipeline bumping targetRevision/values, then a human syncs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tap-control-plane
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tap
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/example-org/terraform-agent-platform.git
+    targetRevision: main
+    path: gitops/platform/charts/control-plane
+    helm:
+      releaseName: tap-control-plane
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: image.repository
+          value: ghcr.io/example-org/terraform-agent-platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tap-system
+  # Deliberately no `automated` block: manual sync with human approval.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+  revisionHistoryLimit: 10

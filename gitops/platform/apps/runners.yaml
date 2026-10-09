@@ -1,0 +1,44 @@
+# Ephemeral IaC runner fleet: namespace, quotas, network policy, and the
+# runner controller that launches single-use Terraform/OpenTofu Jobs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tap-runners
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tap
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/example-org/terraform-agent-platform.git
+    targetRevision: main
+    path: gitops/platform/charts/runners
+    helm:
+      releaseName: tap-runners
+      values: |
+        runner:
+          image: ghcr.io/example-org/tap-runner:latest
+          ttlSecondsAfterFinished: 300
+          activeDeadlineSeconds: 3600
+          serviceAccount: tap-runner   # OIDC-federated, no static cloud creds
+        quotas:
+          maxConcurrentJobs: 20
+        networkPolicy:
+          enabled: true
+          egressAllowList:
+            - cloud-provider-apis
+            - vcs
+            - tap-policy.svc
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tap-runners
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

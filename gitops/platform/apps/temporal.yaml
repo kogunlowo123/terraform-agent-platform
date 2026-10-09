@@ -1,0 +1,55 @@
+# Temporal (durable run workflow engine), self-hosted via the official chart.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tap-temporal
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tap
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://go.temporal.io/helm-charts
+    chart: temporal
+    targetRevision: 0.50.0
+    helm:
+      releaseName: temporal
+      values: |
+        server:
+          replicaCount: 3
+          config:
+            persistence:
+              default:
+                driver: sql
+                sql:
+                  driver: postgres12
+                  host: tap-postgres.tap-data.svc
+                  port: 5432
+                  database: temporal
+                  existingSecret: temporal-db-credentials
+        cassandra:
+          enabled: false
+        mysql:
+          enabled: false
+        postgresql:
+          enabled: false   # external HA Postgres (Patroni / managed)
+        prometheus:
+          enabled: false   # scraped by the platform Prometheus
+        grafana:
+          enabled: false
+        elasticsearch:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tap-temporal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

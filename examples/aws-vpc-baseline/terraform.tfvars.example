@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (or let the TAP workspace inject these as variables).
+
+org         = "acme"
+environment = "dev"
+region      = "us-east-1"
+
+owner       = "platform-engineering"
+cost_center = "CC-1042"
+data_class  = "internal"
+
+vpc_cidr         = "10.40.0.0/16"
+azs              = ["us-east-1a", "us-east-1b", "us-east-1c"]
+nat_gateway_mode = "single" # use "per_az" in production

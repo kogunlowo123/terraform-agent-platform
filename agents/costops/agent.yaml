@@ -1,0 +1,26 @@
+name: costops
+version: 0.1.0
+domain: finops
+capabilities:
+  - cost.forecast
+  - cost.budget.enforce
+  - cost.rightsize.recommend
+  - cost.anomaly.detect
+required_tools:
+  - cost_forecast
+  - budget_check
+  - rightsize_recommend
+  - cost_estimate
+  - policy_check
+memory:
+  semantic_collection: tap-costops-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:*"
+    - "budgets:*"
+  mutation_budget: 0
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 160000

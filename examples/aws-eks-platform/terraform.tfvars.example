@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars (or let the TAP workspace inject these as variables).
+
+org         = "acme"
+environment = "prod"
+region      = "us-east-1"
+
+owner       = "platform-engineering"
+cost_center = "CC-1042"
+data_class  = "confidential"
+
+vpc_cidr           = "10.42.0.0/16"
+azs                = ["us-east-1a", "us-east-1b", "us-east-1c"]
+kubernetes_version = "1.30"
+
+cluster_admin_role_arn = "arn:aws:iam::123456789012:role/platform-admin"
+
+github_org          = "acme"
+tap_oidc_issuer_url = "https://oidc.tap.acme.com"
+tap_oidc_thumbprints = ["0123456789abcdef0123456789abcdef01234567"]
+
+runner_permissions_boundary_arn = "arn:aws:iam::123456789012:policy/tap-runner-boundary"

@@ -1,0 +1,28 @@
+name: appops
+version: 0.1.0
+domain: application-operations
+capabilities:
+  - environment.provision
+  - environment.teardown
+  - release.orchestrate
+  - selfservice.fulfil
+required_tools:
+  - template_render
+  - env_provision
+  - release_promote
+  - terraform_plan
+  - terraform_apply
+  - policy_check
+  - cost_estimate
+memory:
+  semantic_collection: tap-appops-semantic
+guardrails:
+  scope_allowlist:
+    - "workspaces:app-*"
+    - "templates:catalog/*"
+  mutation_budget: 20
+  dry_run_default: true
+model:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  token_budget: 200000

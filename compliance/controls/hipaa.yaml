@@ -1,0 +1,89 @@
+framework: hipaa
+version: "HIPAA Security Rule (45 CFR Part 164, Subpart C)"
+controls:
+  - id: 164.312(a)(1)
+    title: Access control
+    description: >
+      Technical policies and procedures that allow only authorized persons or
+      software programs to access ePHI (no public storage endpoints, private
+      AI endpoints).
+    policy_refs:
+      - tap.terraform.deny_public_s3
+      - tap.ai.model_governance
+    evidence:
+      - "SELECT run_id, decision, messages FROM policy_results WHERE package = 'tap.terraform.deny_public_s3' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: 164.312(a)(2)(iv)
+    title: Encryption and decryption
+    description: >
+      Mechanisms to encrypt and decrypt ePHI at rest; enforced on RDS, EBS,
+      S3, and Azure storage on every plan.
+    policy_refs:
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.encryption_required' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: 164.312(b)
+    title: Audit controls
+    description: >
+      Hardware, software, and procedural mechanisms that record and examine
+      activity in systems containing ePHI (immutable run audit trail).
+    policy_refs: []
+    evidence:
+      - "SELECT count(*), min(created_at), max(created_at) FROM audit_log WHERE created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: 164.312(c)(1)
+    title: Integrity
+    description: >
+      Policies to protect ePHI from improper alteration or destruction;
+      destroy actions always require human approval, state is versioned.
+    policy_refs: []
+    evidence:
+      - "SELECT r.run_id, a.approver, a.created_at FROM runs r JOIN approvals a ON a.run_id = r.run_id WHERE r.action = 'destroy' AND r.created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: 164.312(e)(1)
+    title: Transmission security
+    description: >
+      Technical security measures to guard against unauthorized access to
+      ePHI transmitted over networks (HTTPS-only storage, no world-open
+      ingress).
+    policy_refs:
+      - tap.terraform.deny_open_ingress
+      - tap.terraform.encryption_required
+    evidence:
+      - "SELECT run_id, decision FROM policy_results WHERE package = 'tap.terraform.deny_open_ingress' AND created_at > now() - interval '90 days'"
+    automation: full
+
+  - id: 164.308(a)(1)(ii)(A)
+    title: Risk analysis
+    description: >
+      Accurate and thorough assessment of potential risks and vulnerabilities
+      to ePHI (continuous scanning, weekly security scan pipeline).
+    policy_refs: []
+    evidence:
+      - "report: security-scan workflow runs + grype findings trend, 90 days"
+    automation: partial
+
+  - id: 164.308(a)(7)(ii)(A)
+    title: Data backup plan
+    description: >
+      Procedures to create and maintain retrievable exact copies of ePHI
+      (versioned, replicated Terraform state and database backups).
+    policy_refs: []
+    evidence:
+      - "SELECT workspace_id, count(*) AS versions FROM state_versions GROUP BY workspace_id"
+    automation: partial
+
+  - id: 164.308(b)(1)
+    title: Business associate contracts
+    description: >
+      Written contracts with business associates that create, receive,
+      maintain, or transmit ePHI on the entity's behalf.
+    policy_refs: []
+    evidence:
+      - "document: executed BAA register (legal)"
+    automation: manual

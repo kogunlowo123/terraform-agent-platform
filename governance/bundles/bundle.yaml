@@ -1,0 +1,67 @@
+# TAP policy bundle manifest.
+#
+# Consumed by the governance release pipeline to build, sign, and publish the
+# OPA bundle, and by the Policy Service to apply per-policy rollout stages.
+apiVersion: governance.tap.dev/v1
+kind: PolicyBundle
+metadata:
+  name: tap-policies
+  version: 1.4.0            # bumped by scripts/release.sh
+  revision: ""              # injected at build time (git short SHA)
+spec:
+  registry: ghcr.io/example-org/tap-policies
+  signing:
+    method: cosign-keyless
+    identity: https://github.com/example-org/terraform-agent-platform/.github/workflows/release.yml@refs/tags/*
+    issuer: https://token.actions.githubusercontent.com
+
+  # Rendered into the bundle's data.json under data.tap.config
+  config:
+    instance_allowlist:
+      dev: [t3.micro, t3.small, t3.medium]
+      staging: [t3.medium, t3.large, m6i.large]
+      prod: [m6i.large, m6i.xlarge, m6i.2xlarge, r6i.large, r6i.xlarge]
+    ai:
+      approved_models:
+        - claude-sonnet-4-5
+        - claude-haiku-4-5
+        - gpt-4o
+        - gpt-4o-mini
+        - anthropic.claude-sonnet-4-5-v1:0
+        - amazon.titan-embed-text-v2:0
+    taggable_types: []
+
+  # Per-policy rollout stage: advisory -> soft -> hard
+  policies:
+    - package: tap.terraform.deny_public_s3
+      stage: hard
+      owners: [security-team]
+      controls: [SOC2-CC6.1, ISO27001-A.8.3, CIS-2.1.5]
+    - package: tap.terraform.require_tags
+      stage: soft
+      owners: [platform-team]
+      controls: [SOC2-CC6.8]
+    - package: tap.terraform.encryption_required
+      stage: hard
+      owners: [security-team]
+      controls: [SOC2-CC6.1, HIPAA-164.312-a-2-iv, PCI-3.5]
+    - package: tap.terraform.deny_open_ingress
+      stage: hard
+      owners: [security-team]
+      controls: [CIS-5.2, NIST-SC-7]
+    - package: tap.terraform.instance_allowlist
+      stage: soft
+      owners: [finops-team]
+      controls: []
+    - package: tap.cost.budget_gate
+      stage: soft
+      owners: [finops-team]
+      controls: []
+    - package: tap.kubernetes.pod_security
+      stage: hard
+      owners: [security-team]
+      controls: [CIS-K8S-5.2.1, NIST-AC-6]
+    - package: tap.ai.model_governance
+      stage: advisory   # baking in; promote to soft after 2026-10-20 review
+      owners: [ai-governance-team]
+      controls: [NIST-800-53-SA-15, GDPR-ART-25]
