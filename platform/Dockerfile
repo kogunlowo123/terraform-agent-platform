@@ -1,12 +1,12 @@
 # TAP control plane image (multi-stage, non-root).
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /build
 COPY pyproject.toml README.md* ./
 COPY tap_platform ./tap_platform
 RUN pip install --no-cache-dir --prefix=/install .
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 LABEL org.opencontainers.image.title="tap-platform" \
       org.opencontainers.image.description="Terraform Agent Platform control plane" \
